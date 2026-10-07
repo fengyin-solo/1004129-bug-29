@@ -3,7 +3,7 @@
     <header class="page-head">
       <div>
         <h2>客舱清洁管理</h2>
-        <p class="page-desc">维护清洁任务，围绕清洁编号、关联航班、清洁类型、清洁班组做登记、筛选与状态流转。</p>
+        <p class="page-desc">维护清洁任务，围绕清洁编号、关联航班、清洁类型、清洁班组做登记、筛选与状态流转。状态按 {{ flowText }} 单向推进。</p>
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记清洁任务</button>
@@ -43,17 +43,23 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
-          <td>{{ row.status }}</td>
+          <td v-for="column in columns" :key="column">
+            <template v-if="column === '清洁班组'">{{ crewText(row) }}</template>
+            <template v-else>{{ row[column] === '' || row[column] == null ? '—' : row[column] }}</template>
+          </td>
+          <td>
+            {{ row.status }}
+            <span v-if="isArchived(row)" class="tag tag-archived">已归档</span>
+          </td>
           <td class="row-actions">
+            <button class="link" type="button" @click="openDetail(row)">查看详情</button>
             <button
-              v-for="action in actions"
-              :key="action"
+              v-if="nextAction(row)"
               class="link"
               type="button"
-              @click="runAction(action, row)"
+              @click="runAction(String(nextAction(row)), row)"
             >
-              {{ action }}
+              {{ nextAction(row) }}
             </button>
           </td>
         </tr>
@@ -72,6 +78,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import {
   downloadEntries,
@@ -79,25 +86,62 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import {
+  CABIN_STATUS_FLOW,
+  cabinCrew,
+  isArchived,
+} from '@/data/cabin-clean'
 import type { EntryRow } from '@/data/types'
 
+const router = useRouter()
 const meta = moduleMeta('cabin_clean')
-const columns = ["清洁编号", "关联航班", "清洁类型", "清洁班组", "计划开始", "实际完成", "清洁用时", "清洁状态"]
-const actions = ["开始清洁", "完成清洁", "安排复查"]
-const statuses = ["待清洁", "清洁中", "已完成", "需复查"]
-const stats = [{"label": "待清洁航班", "value": 0}, {"label": "清洁中航班", "value": 0}, {"label": "需复查航班", "value": 0}]
+const columns = ["清洁编号", "关联航班", "清洁类型", "清洁班组", "计划开始", "实际完成", "清洁用时"]
+const statuses = [...CABIN_STATUS_FLOW]
+const flowText = statuses.join(' → ')
+// 每个状态在列表上只暴露「走到下一状态」的那一个动作；待清洁→开始清洁、清洁中→完成清洁、已完成→安排复查。
+const NEXT_ACTION = ['开始清洁', '完成清洁', '安排复查']
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
-const filterFields = columns.slice(0, 3)
+const filterFields = ["清洁编号", "关联航班", "清洁类型"]
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
 )
+const stats = computed(() =>
+  statuses.map((status) => ({
+    label: `${status}航班`,
+    value: rows.value.filter((row) => String(row.status) === status).length,
+  })),
+)
+
+function crewText(row: EntryRow): string {
+  return cabinCrew(row)
+}
+
+function nextAction(row: EntryRow): string | null {
+  // 归档记录没有后续动作；只给当前状态的下一格开口，从根上避免越级和倒退。
+  if (isArchived(row)) {
+    return null
+  }
+  const index = statuses.indexOf(String(row.status) as (typeof CABIN_STATUS_FLOW)[number])
+  if (index < 0 || index >= NEXT_ACTION.length) {
+    return null
+  }
+  return NEXT_ACTION[index]
+}
+
+function syncText(result: { synced?: { module: string; ids: number[] }[] }): string {
+  const names: Record<string, string> = { flight_ops: '航班保障', turnaround: '过站台账' }
+  const parts = (result.synced ?? [])
+    .filter((item) => item.ids.length > 0)
+    .map((item) => `${names[item.module] ?? item.module} ${item.ids.length} 条`)
+  return parts.length > 0 ? `；已同步：${parts.join('、')}` : ''
+}
 
 function resetFilters() {
   filters.value = {}
@@ -112,6 +156,10 @@ function openCreate() {
   errorMessage.value = '清洁任务登记入口尚未接入审批流'
 }
 
+function openDetail(row: EntryRow) {
+  router.push({ name: 'cabin_clean_detail', params: { id: String(row.id) } })
+}
+
 function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
   const result = applyAction(meta.key, Number(row.id), action)
@@ -119,7 +167,10 @@ function runAction(action: string, row: EntryRow) {
     errorMessage.value = result.message
     return
   }
+  errorMessage.value = ''
   reload()
+  // 联动结果提示放在成功消息里，保证一次动作只联动一次。
+  window.alert(`${result.message}${syncText(result)}`)
 }
 
 function reload() {
@@ -135,3 +186,18 @@ function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.tag-archived {
+  background: #e2e8f0;
+  color: #475569;
+}
+</style>

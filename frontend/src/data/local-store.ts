@@ -41,7 +41,13 @@ export function listRows(key: string): EntryRow[] {
 }
 
 export function saveRows(key: string, rows: EntryRow[]): void {
-  const next = { ...allRows(), [key]: rows }
+  saveAll({ [key]: rows })
+}
+
+// 一次写多个模块：客舱清洁要联动航班保障 / 过站台账，必须在同一次落盘里完成，
+// 避免写一半失败导致两边对不上（台账进度被改两次也正是旧逻辑分两次写的副作用）。
+export function saveAll(patch: Record<string, EntryRow[]>): void {
+  const next = { ...allRows(), ...patch }
   cache = next
   if (typeof window !== 'undefined' && window.localStorage) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))

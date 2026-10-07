@@ -1,4 +1,5 @@
 import { MODULE_BY_KEY } from '@/data/modules'
+import { CABIN_CLEAN_KEY, runCabinAction } from '@/data/cabin-clean'
 import { allRows, listRows, resetRows, saveRows } from '@/data/local-store'
 import type { ActionResult, EntryRow, ModuleMeta, OverviewResult, PageResult } from '@/data/types'
 
@@ -30,6 +31,11 @@ export function listEntries(key: string, filters: Record<string, string> = {}): 
 
 export function runAction(key: string, id: number, action: string): ActionResult {
   const meta = moduleMeta(key)
+  // 客舱清洁走独立的单向状态机（待清洁 → 清洁中 → 已完成 → 需复查），
+  // 通用流转不做顺序校验，不能再用它把状态越级或改回去。
+  if (key === CABIN_CLEAN_KEY) {
+    return runCabinAction(id, action)
+  }
   const target = meta.actionTargets[action]
   if (!target) {
     return { ok: false, message: `${meta.entity}没有登记「${action}」这个动作` }
