@@ -40,6 +40,11 @@ export function listRows(key: string): EntryRow[] {
   return allRows()[key] ?? []
 }
 
+// 写操作前强制回读 localStorage：别的页签已经确认的流转要能看到，并发确认只生效一次。
+export function refreshFromStorage(): void {
+  cache = readStorage()
+}
+
 export function saveRows(key: string, rows: EntryRow[]): void {
   const next = { ...allRows(), [key]: rows }
   cache = next

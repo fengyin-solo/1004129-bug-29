@@ -47,7 +47,7 @@
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
-              v-for="action in actions"
+              v-for="action in rowActions(row)"
               :key="action"
               class="link"
               type="button"
@@ -55,6 +55,7 @@
             >
               {{ action }}
             </button>
+            <span v-if="!rowActions(row).length" class="empty-state">—</span>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -74,6 +75,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import {
+  availableActions,
   downloadEntries,
   listEntries,
   moduleMeta,
@@ -83,7 +85,6 @@ import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('cabin_clean')
 const columns = ["清洁编号", "关联航班", "清洁类型", "清洁班组", "计划开始", "实际完成", "清洁用时", "清洁状态"]
-const actions = ["开始清洁", "完成清洁", "安排复查"]
 const statuses = ["待清洁", "清洁中", "已完成", "需复查"]
 const stats = [{"label": "待清洁航班", "value": 0}, {"label": "清洁中航班", "value": 0}, {"label": "需复查航班", "value": 0}]
 
@@ -110,6 +111,11 @@ function exportRows() {
 
 function openCreate() {
   errorMessage.value = '清洁任务登记入口尚未接入审批流'
+}
+
+// 列表入口只放出当前状态下允许的动作，已完成不会再被切回清洁中
+function rowActions(row: EntryRow): string[] {
+  return availableActions(meta.key, row)
 }
 
 function runAction(action: string, row: EntryRow) {

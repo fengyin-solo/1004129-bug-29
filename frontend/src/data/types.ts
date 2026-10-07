@@ -17,6 +17,10 @@ export type ModuleMeta = {
   statuses: string[]
   actions: string[]
   actionTargets: Record<string, string>
+  /** 可选：动作级流转规则。登记后严格执行 from→to 单向流转，禁止越级与倒退。 */
+  transitions?: Record<string, { from: string[]; to: string }>
+  /** 可选：字段为空时的展示兜底（只在读取/导出时生效，不写回存储）。 */
+  fieldFallbacks?: Record<string, string>
   metrics: string[]
 }
 
